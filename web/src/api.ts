@@ -83,6 +83,39 @@ export const searchMarketFunds = async (query: string): Promise<MarketFund[]> =>
     return response.data;
 };
 
+export interface FundMarketDetails {
+    info: Record<string, string>;
+    performance: any[];
+}
+
+export const fetchFundMarketDetails = async (code: string): Promise<FundMarketDetails> => {
+    const response = await axios.get(`${API_BASE}/market/funds/${code}/details`);
+    return response.data;
+};
+
+export interface NavPoint {
+    date: string;
+    value: number;
+}
+
+export interface IndexData {
+  name: string;
+  code: string;
+  price: number;
+  change_pct: number;
+  change_val: number;
+}
+
+export const fetchMarketIndices = async (): Promise<IndexData[]> => {
+    const response = await axios.get(`${API_BASE}/market/indices`);
+    return response.data;
+};
+
+export const fetchFundNavHistory = async (code: string): Promise<NavPoint[]> => {
+    const response = await axios.get(`${API_BASE}/market/funds/${code}/nav`);
+    return response.data;
+};
+
 export const fetchSettings = async (): Promise<SettingsData> => {
   const response = await axios.get(`${API_BASE}/settings`);
   return response.data;

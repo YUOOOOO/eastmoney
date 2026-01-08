@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Typography, 
   Button, 
@@ -10,18 +10,20 @@ import {
   ListItem,
   ListItemButton,
   ListItemText,
-  Divider,
-  Grid,
-  Tooltip
+  ListSubheader,
+  Tooltip,
+  Chip
 } from '@mui/material';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import HistoryIcon from '@mui/icons-material/History';
 import ArticleIcon from '@mui/icons-material/Article';
 import DownloadIcon from '@mui/icons-material/Download';
+import PsychologyIcon from '@mui/icons-material/Psychology';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import html2canvas from 'html2canvas';
-import { runSentimentAnalysis, fetchSentimentReports, fetchReportContent,  } from '../api';
+import { runSentimentAnalysis, fetchSentimentReports, fetchReportContent } from '../api';
 import type { SentimentReportItem } from '../api';
 
 export default function SentimentPage() {
@@ -49,6 +51,27 @@ export default function SentimentPage() {
     loadHistory();
   }, []);
 
+  // Group history by Date (YYYY-MM-DD)
+  const groupedHistory = useMemo(() => {
+    const groups: Record<string, SentimentReportItem[]> = {};
+    history.forEach(item => {
+        // Assume date format is somewhat standard, extract YYYY-MM-DD
+        // The API returns 'date' which might be full datetime string. 
+        // We'll parse it.
+        try {
+            const dateObj = new Date(item.date);
+            const dateKey = isNaN(dateObj.getTime()) ? 'Unknown Date' : dateObj.toLocaleDateString();
+            if (!groups[dateKey]) groups[dateKey] = [];
+            groups[dateKey].push(item);
+        } catch (e) {
+             if (!groups['Others']) groups['Others'] = [];
+             groups['Others'].push(item);
+        }
+    });
+    // Sort keys descending (newest dates first)
+    return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+  }, [history]);
+
   const handleRunAnalysis = async () => {
     setAnalyzing(true);
     setError(null);
@@ -56,7 +79,7 @@ export default function SentimentPage() {
       const data = await runSentimentAnalysis();
       setReport(data.report);
       setSelectedFile(data.filename);
-      await loadHistory(); // Refresh history
+      await loadHistory(); 
     } catch (err) {
       console.error(err);
       setError('Failed to generate sentiment analysis. Please check the backend logs.');
@@ -83,7 +106,6 @@ export default function SentimentPage() {
   // Export report as image
   const handleExportImage = async () => {
       if (!reportRef.current || !report) return;
-      
       setExporting(true);
       try {
           const exportWidth = 1200;
@@ -118,74 +140,125 @@ export default function SentimentPage() {
   };
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="p-6 bg-white border-b border-slate-200 flex justify-between items-center shrink-0">
-        <div>
-          <Typography variant="h5" className="text-slate-900 font-bold tracking-tight mb-2">
-            MARKET SENTIMENT
-          </Typography>
-          <Typography variant="body2" className="text-slate-500">
-            Real-time emotion & cycle analysis
-          </Typography>
+    <div className="h-full flex flex-col bg-slate-50">
+      {/* Minimalist Header */}
+      <div className="px-6 py-3 bg-white border-b border-slate-200 flex justify-between items-center shrink-0">
+        <div className="flex items-center gap-3">
+            <PsychologyIcon sx={{ color: '#6366f1', fontSize: 28 }} />
+            <div>
+                <Typography variant="h6" className="font-bold text-slate-800 tracking-tight" sx={{ lineHeight: 1.2 }}>
+                    Market Sentiment
+                </Typography>
+                <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                    <Typography variant="caption" className="text-slate-400 font-medium text-[10px] uppercase tracking-wider">
+                        Neural Analysis Active
+                    </Typography>
+                </div>
+            </div>
         </div>
-        <Button
-          variant="contained"
-          startIcon={analyzing ? <CircularProgress size={20} color="inherit" /> : <AutoGraphIcon />}
-          onClick={handleRunAnalysis}
-          disabled={analyzing}
-          sx={{
-            backgroundColor: '#2563eb',
-            textTransform: 'none',
-            borderRadius: '8px',
-            boxShadow: 'none',
-            '&:hover': { backgroundColor: '#1d4ed8', boxShadow: 'none' }
-          }}
-        >
-          {analyzing ? 'Analyzing...' : 'Run Analysis'}
-        </Button>
+        
+        <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+                variant="outlined"
+                size="small"
+                startIcon={analyzing ? <CircularProgress size={14} color="inherit" /> : <AutoGraphIcon fontSize="small" />}
+                onClick={handleRunAnalysis}
+                disabled={analyzing}
+                sx={{
+                    color: '#0f172a',
+                    borderColor: '#e2e8f0',
+                    borderRadius: '20px',
+                    px: 2,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    fontSize: '0.8rem',
+                    '&:hover': { bgcolor: '#f8fafc', borderColor: '#cbd5e1' }
+                }}
+            >
+                {analyzing ? 'Processing...' : 'Run Analysis'}
+            </Button>
+        </Box>
       </div>
 
       <div className="flex-1 overflow-hidden flex">
-        {/* Sidebar History */}
-        <div className="w-64 bg-white border-r border-slate-200 overflow-y-auto flex flex-col shrink-0">
-          <div className="p-4 border-b border-slate-100 bg-slate-50">
-             <div className="flex items-center text-slate-600">
+        {/* Sidebar History - Grouped by Date */}
+        <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto flex flex-col shrink-0 custom-scrollbar">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+             <div className="flex items-center text-slate-500">
                 <HistoryIcon fontSize="small" className="mr-2"/>
-                <Typography variant="subtitle2" fontWeight="600">History</Typography>
+                <Typography variant="subtitle2" fontWeight="700" sx={{ letterSpacing: '0.05em' }}>TIMELINE</Typography>
              </div>
           </div>
-          <List disablePadding>
-            {history.map((item) => (
-              <ListItem key={item.filename} disablePadding>
-                <ListItemButton 
-                  selected={selectedFile === item.filename}
-                  onClick={() => handleSelectReport(item.filename)}
-                  sx={{
-                    borderLeft: selectedFile === item.filename ? '3px solid #2563eb' : '3px solid transparent',
-                    backgroundColor: selectedFile === item.filename ? '#eff6ff' : 'transparent',
-                    '&:hover': { backgroundColor: '#f8fafc' }
-                  }}
-                >
-                  <ListItemText 
-                    primary={item.date} 
-                    secondary={item.filename}
-                    primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: 500 }}
-                    secondaryTypographyProps={{ fontSize: '0.7rem', noWrap: true }}
-                  />
-                </ListItemButton>
-              </ListItem>
+          
+          <List disablePadding sx={{ pb: 4 }}>
+            {groupedHistory.map(([dateLabel, items]) => (
+                <li key={dateLabel}>
+                    <ul className="p-0 list-none">
+                        <ListSubheader sx={{ 
+                            bgcolor: '#fff', 
+                            color: '#94a3b8', 
+                            fontWeight: 800, 
+                            fontSize: '0.75rem', 
+                            lineHeight: '40px',
+                            fontFamily: 'JetBrains Mono'
+                        }}>
+                            {dateLabel === new Date().toLocaleDateString() ? 'TODAY' : dateLabel}
+                        </ListSubheader>
+                        {items.map((item) => {
+                            // Extract time from date string if possible
+                            const timeStr = new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            return (
+                                <ListItem key={item.filename} disablePadding>
+                                    <ListItemButton 
+                                        selected={selectedFile === item.filename}
+                                        onClick={() => handleSelectReport(item.filename)}
+                                        sx={{
+                                            mx: 1.5,
+                                            my: 0.5,
+                                            borderRadius: '8px',
+                                            border: '1px solid transparent',
+                                            '&.Mui-selected': {
+                                                bgcolor: '#eff6ff',
+                                                borderColor: '#dbeafe',
+                                                color: '#2563eb',
+                                                '&:hover': { bgcolor: '#dbeafe' }
+                                            },
+                                            '&:hover': { bgcolor: '#f8fafc' }
+                                        }}
+                                    >
+                                        <ListItemText 
+                                            primary={
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <AccessTimeIcon sx={{ fontSize: 14, color: selectedFile === item.filename ? '#2563eb' : '#94a3b8' }} />
+                                                    <Typography sx={{ fontWeight: 700, fontSize: '0.85rem' }}>{timeStr}</Typography>
+                                                </Box>
+                                            }
+                                            secondary={item.filename.replace('sentiment_', '').replace('.md', '')}
+                                            secondaryTypographyProps={{ 
+                                                fontSize: '0.7rem', 
+                                                noWrap: true, 
+                                                sx: { mt: 0.5, color: selectedFile === item.filename ? '#60a5fa' : '#cbd5e1' } 
+                                            }}
+                                        />
+                                    </ListItemButton>
+                                </ListItem>
+                            );
+                        })}
+                    </ul>
+                </li>
             ))}
+            
             {history.length === 0 && (
-              <div className="p-4 text-center text-slate-400 text-sm">
-                No reports found.
+              <div className="p-8 text-center">
+                <Typography sx={{ color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 600 }}>No signals recorded.</Typography>
               </div>
             )}
           </List>
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
           {error && (
             <Alert severity="error" sx={{ mb: 3, borderRadius: '8px' }}>
               {error}
@@ -210,55 +283,76 @@ export default function SentimentPage() {
             </div>
           )}
 
-          {loading ? (
-             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}>
-                <CircularProgress />
-             </Box>
-          ) : report ? (
-            <Paper 
-              ref={reportRef}
-              elevation={0} 
-              sx={{ 
-                p: 5, 
-                borderRadius: '12px', 
-                border: '1px solid #e2e8f0',
-                maxWidth: '900px',
-                mx: 'auto',
-                backgroundColor: '#ffffff'
-              }}
-            >
-              <div className="markdown-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {report}
-                </ReactMarkdown>
-              </div>
-              {/* Footer for Export */}
-              <div className="mt-8 pt-4 border-t border-slate-100 text-center">
-                  <Typography variant="caption" className="text-slate-400 font-mono text-[10px] tracking-widest uppercase">
-                      Generated by EastMoney Pro AI • Confidential • {new Date().getFullYear()}
+          <Box sx={{ position: 'relative', minHeight: '400px' }}>
+              {loading && (
+                 <Box sx={{ 
+                     position: 'absolute', 
+                     top: 0, 
+                     left: 0, 
+                     right: 0, 
+                     bottom: 0, 
+                     bgcolor: 'rgba(255,255,255,0.7)', 
+                     backdropFilter: 'blur(2px)',
+                     zIndex: 10,
+                     display: 'flex', 
+                     justifyContent: 'center', 
+                     alignItems: 'center',
+                     borderRadius: '12px'
+                 }}>
+                    <CircularProgress sx={{ color: '#2563eb' }} />
+                 </Box>
+              )}
+
+              {report ? (
+                <Paper 
+                  ref={reportRef}
+                  elevation={0} 
+                  sx={{ 
+                    p: 5, 
+                    borderRadius: '12px', 
+                    border: '1px solid #e2e8f0',
+                    maxWidth: '900px',
+                    mx: 'auto',
+                    backgroundColor: '#ffffff',
+                    minHeight: '600px' // Prevent collapse
+                  }}
+                >
+                  <div className="markdown-body">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {report}
+                    </ReactMarkdown>
+                  </div>
+                  {/* Footer for Export */}
+                  <div className="mt-8 pt-4 border-t border-slate-100 text-center">
+                      <Typography variant="caption" className="text-slate-400 font-mono text-[10px] tracking-widest uppercase">
+                          Generated by EastMoney Pro AI • Confidential • {new Date().getFullYear()}
+                      </Typography>
+                  </div>
+                </Paper>
+              ) : !loading && (
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    height: '400px',
+                    color: 'text.secondary',
+                    border: '2px dashed #e2e8f0',
+                    borderRadius: '12px',
+                    bgcolor: '#f8fafc'
+                  }}
+                >
+                  <ArticleIcon sx={{ fontSize: 48, mb: 2, color: '#94a3b8' }} />
+                  <Typography variant="h6" sx={{ color: '#64748b', fontWeight: 600 }}>
+                    Select a report to view
                   </Typography>
-              </div>
-            </Paper>
-          ) : (
-            <Box 
-              sx={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                height: '60%',
-                color: 'text.secondary',
-              }}
-            >
-              <ArticleIcon sx={{ fontSize: 60, mb: 2, color: '#e2e8f0' }} />
-              <Typography variant="h6" color="text.secondary">
-                Select a report to view
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                or click "Run Analysis" to generate a new one
-              </Typography>
-            </Box>
-          )}
+                  <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                    or click "Run Analysis" to generate a new one
+                  </Typography>
+                </Box>
+              )}
+          </Box>
         </div>
       </div>
     </div>

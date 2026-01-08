@@ -2,46 +2,40 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Box,
     Typography,
-    List,
-    ListItemButton,
-    ListItemText,
-    Chip,
     Button,
     CircularProgress,
     IconButton,
-    ListItemIcon,
-    InputAdornment,
     TextField,
     Tooltip,
-    Collapse,
-    Menu,
-    MenuItem
+    Paper,
+    Grid,
+    Divider,
+    Chip,
+    InputAdornment
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import SearchIcon from '@mui/icons-material/Search';
-import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import ExpandLess from '@mui/icons-material/ExpandLess';
-import ExpandMore from '@mui/icons-material/ExpandMore';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import html2canvas from 'html2canvas';
-import { fetchCommodityReports, fetchReportContent, generateCommodityReport,  } from '../api';
-import type{ReportSummary} from '../api';
+import { fetchCommodityReports, fetchReportContent, generateCommodityReport } from '../api';
+import type { ReportSummary } from '../api';
 
 export default function CommoditiesPage() {
     const [reports, setReports] = useState<ReportSummary[]>([]);
     const [selectedReport, setSelectedReport] = useState<ReportSummary | null>(null);
     const [reportContent, setReportContent] = useState<string>('');
     const [loadingContent, setLoadingContent] = useState<boolean>(false);
-    const [generating, setGenerating] = useState<boolean>(false);
+    const [generatingGold, setGeneratingGold] = useState<boolean>(false);
+    const [generatingSilver, setGeneratingSilver] = useState<boolean>(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [exporting, setExporting] = useState<boolean>(false);
-    
-    // Grouping state
-    const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 
     const reportRef = useRef<HTMLDivElement>(null);
 
@@ -53,15 +47,8 @@ export default function CommoditiesPage() {
         try {
             const commodityReports = await fetchCommodityReports();
             setReports(commodityReports);
-            
-            // Auto expand newest date
-            if (commodityReports.length > 0) {
-                const newestDate = commodityReports[0].date;
-                setExpandedDates(new Set([newestDate]));
-                
-                if (!selectedReport) {
-                    handleSelectReport(commodityReports[0]);
-                }
+            if (commodityReports.length > 0 && !selectedReport) {
+                handleSelectReport(commodityReports[0]);
             }
         } catch (error) {
             console.error("Failed to load reports", error);
@@ -82,15 +69,17 @@ export default function CommoditiesPage() {
     };
 
     const handleGenerate = async (asset: 'gold' | 'silver') => {
-        setGenerating(true);
+        if (asset === 'gold') setGeneratingGold(true);
+        else setGeneratingSilver(true);
+        
         try {
             await generateCommodityReport(asset);
-            await loadReports(); // Reload list
+            await loadReports();
         } catch (error) {
             console.error("Analysis failed", error);
-            alert("Analysis failed. See console.");
         } finally {
-            setGenerating(false);
+            if (asset === 'gold') setGeneratingGold(false);
+            else setGeneratingSilver(false);
         }
     };
 
@@ -108,13 +97,6 @@ export default function CommoditiesPage() {
         }
     };
 
-    const toggleDate = (date: string) => {
-        const newSet = new Set(expandedDates);
-        if (newSet.has(date)) newSet.delete(date);
-        else newSet.add(date);
-        setExpandedDates(newSet);
-    };
-
     // Grouping Logic
     const groupedReports = useMemo(() => {
         const filtered = reports.filter(r => 
@@ -128,200 +110,246 @@ export default function CommoditiesPage() {
             groups[r.date].push(r);
         });
         
-        // Sort dates descending
         return Object.keys(groups).sort((a, b) => b.localeCompare(a)).map(date => ({
             date,
-            items: groups[date].sort((a, b) => (a.fund_code === 'gold' ? -1 : 1)) // Gold first
+            items: groups[date].sort((a, b) => (a.fund_code === 'gold' ? -1 : 1))
         }));
     }, [reports, searchQuery]);
 
-    // Menu for Generate
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const openMenu = Boolean(anchorEl);
-    const handleClickMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
-        setAnchorEl(event.currentTarget);
-    };
-    const handleCloseMenu = () => {
-        setAnchorEl(null);
-    };
-
     return (
-        <div className="flex h-screen bg-background overflow-hidden text-slate-700">
-            {/* Sidebar */}
-            <div className="w-[320px] border-r border-slate-200 bg-white flex flex-col z-10">
-                <div className="p-4 border-b border-slate-200">
-                    <div className="flex justify-between items-center mb-4">
-                        <Typography variant="h6" className="font-bold text-amber-700 flex items-center gap-2">
-                            <MonetizationOnIcon /> Commodities
-                        </Typography>
-                        <div className="flex gap-1">
-                             <Tooltip title="New Analysis">
-                                <IconButton 
-                                    size="small" 
-                                    onClick={handleClickMenu} 
-                                    disabled={generating}
-                                    className="text-amber-600 bg-amber-50 hover:bg-amber-100"
-                                >
-                                    {generating ? <CircularProgress size={20} /> : <AutoAwesomeIcon fontSize="small"/>}
-                                </IconButton>
-                            </Tooltip>
-                            <Menu
-                                anchorEl={anchorEl}
-                                open={openMenu}
-                                onClose={handleCloseMenu}
-                            >
-                                <MenuItem onClick={() => { handleGenerate('gold'); handleCloseMenu(); }}>Analyze Gold</MenuItem>
-                                <MenuItem onClick={() => { handleGenerate('silver'); handleCloseMenu(); }}>Analyze Silver</MenuItem>
-                            </Menu>
-                            <IconButton size="small" onClick={loadReports}><RefreshIcon /></IconButton>
-                        </div>
-                    </div>
-                    <TextField
-                        fullWidth
-                        size="small"
-                        placeholder="Search reports..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        InputProps={{
-                            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" className="text-slate-400"/></InputAdornment>,
-                        }}
-                        sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#f8fafc' } }}
-                    />
+        <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
+            {/* Asset Dashboard Header - Ultra Minimalist */}
+            <Box sx={{ px: 4, py: 3, bgcolor: '#fff', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: '#0f172a', fontFamily: 'JetBrains Mono', letterSpacing: '-0.02em' }}>
+                        COMMODITIES INTELLIGENCE
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>
+                        Real-time Strategic Analysis
+                    </Typography>
                 </div>
+                
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleGenerate('gold')}
+                        disabled={generatingGold}
+                        startIcon={generatingGold ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon sx={{ fontSize: 16 }} />}
+                        sx={{ 
+                            color: '#d97706', 
+                            borderColor: '#fcd34d',
+                            bgcolor: 'rgba(251, 191, 36, 0.05)',
+                            '&:hover': { bgcolor: 'rgba(251, 191, 36, 0.1)', borderColor: '#d97706' },
+                            fontWeight: 700,
+                            borderRadius: '20px',
+                            textTransform: 'none',
+                            fontSize: '0.75rem',
+                            px: 2
+                        }}
+                    >
+                        {generatingGold ? 'Analyzing Gold...' : 'Analyze Gold'}
+                    </Button>
 
-                <div className="overflow-y-auto flex-1 custom-scrollbar">
-                    <List disablePadding>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleGenerate('silver')}
+                        disabled={generatingSilver}
+                        startIcon={generatingSilver ? <CircularProgress size={14} color="inherit" /> : <AutoAwesomeIcon sx={{ fontSize: 16 }} />}
+                        sx={{ 
+                            color: '#475569', 
+                            borderColor: '#cbd5e1',
+                            bgcolor: 'rgba(241, 245, 249, 0.5)',
+                            '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' },
+                            fontWeight: 700,
+                            borderRadius: '20px',
+                            textTransform: 'none',
+                            fontSize: '0.75rem',
+                            px: 2
+                        }}
+                    >
+                        {generatingSilver ? 'Analyzing Silver...' : 'Analyze Silver'}
+                    </Button>
+                </Box>
+            </Box>
+
+            {/* Split View Content */}
+            <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                {/* Left: Report Timeline */}
+                <Box sx={{ width: 320, borderRight: '1px solid #f1f5f9', bgcolor: '#fff', display: 'flex', flexDirection: 'column' }}>
+                    <Box sx={{ p: 2, borderBottom: '1px solid #f1f5f9' }}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder="Filter timeline..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            InputProps={{
+                                startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" className="text-slate-400"/></InputAdornment>,
+                                endAdornment: <IconButton size="small" onClick={loadReports}><RefreshIcon fontSize="small" /></IconButton>
+                            }}
+                            sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#f8fafc', borderRadius: '8px' } }}
+                        />
+                    </Box>
+                    <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }} className="custom-scrollbar">
                         {groupedReports.map((group) => (
-                            <Box key={group.date}>
-                                <ListItemButton onClick={() => toggleDate(group.date)} className="bg-slate-50 py-2 border-b border-slate-100 hover:bg-slate-100">
-                                    <ListItemIcon sx={{ minWidth: 32 }}>
-                                        <CalendarTodayIcon fontSize="small" sx={{ fontSize: 16, color: '#64748b' }} />
-                                    </ListItemIcon>
-                                    <ListItemText
-                                        primary={group.date}
-                                        primaryTypographyProps={{ fontWeight: 600, fontSize: '0.85rem', color: '#334155', fontFamily: 'monospace' }}
-                                    />
-                                    {expandedDates.has(group.date) ? <ExpandLess fontSize="small" sx={{ color: '#94a3b8' }} /> : <ExpandMore fontSize="small" sx={{ color: '#94a3b8' }} />}
-                                </ListItemButton>
-                                
-                                <Collapse in={expandedDates.has(group.date)} timeout="auto" unmountOnExit>
-                                    <List component="div" disablePadding>
-                                        {group.items.map(report => (
-                                            <ListItemButton
-                                                key={report.filename}
-                                                selected={selectedReport?.filename === report.filename}
-                                                onClick={() => handleSelectReport(report)}
-                                                sx={{ 
-                                                    pl: 4,
-                                                    borderLeft: selectedReport?.filename === report.filename ? '4px solid #b45309' : '4px solid transparent',
-                                                    bgcolor: selectedReport?.filename === report.filename ? '#fffbeb' : 'transparent'
-                                                }}
-                                                className="hover:bg-amber-50"
-                                            >
-                                                <ListItemIcon sx={{ minWidth: 36 }}>
-                                                    {report.fund_code === 'gold' ? (
-                                                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-100 to-amber-200 text-amber-800 flex items-center justify-center font-bold text-xs shadow-sm border border-amber-200">Au</div>
-                                                    ) : (
-                                                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-slate-100 to-slate-300 text-slate-700 flex items-center justify-center font-bold text-xs shadow-sm border border-slate-300">Ag</div>
-                                                    )}
-                                                </ListItemIcon>
-                                                <ListItemText
-                                                    primary={report.fund_name}
-                                                    secondary={report.fund_code === 'gold' ? 'Spot Gold' : 'Spot Silver'}
-                                                    primaryTypographyProps={{ fontWeight: 600, color: '#1e293b', fontSize: '0.9rem' }}
-                                                    secondaryTypographyProps={{ fontSize: '0.75rem', color: '#64748b' }}
-                                                />
-                                            </ListItemButton>
-                                        ))}
-                                    </List>
-                                </Collapse>
+                            <Box key={group.date} sx={{ mb: 3 }}>
+                                <Typography sx={{ 
+                                    fontSize: '0.75rem', 
+                                    fontWeight: 800, 
+                                    color: '#94a3b8', 
+                                    mb: 1.5, 
+                                    pl: 1,
+                                    fontFamily: 'JetBrains Mono'
+                                }}>
+                                    {group.date}
+                                </Typography>
+                                {group.items.map(report => {
+                                    const isGold = report.fund_code === 'gold';
+                                    const isSelected = selectedReport?.filename === report.filename;
+                                    return (
+                                        <Box 
+                                            key={report.filename}
+                                            onClick={() => handleSelectReport(report)}
+                                            sx={{
+                                                p: 2,
+                                                mb: 1,
+                                                borderRadius: '12px',
+                                                cursor: 'pointer',
+                                                border: isSelected ? (isGold ? '1px solid #fcd34d' : '1px solid #cbd5e1') : '1px solid transparent',
+                                                bgcolor: isSelected ? (isGold ? '#fffbeb' : '#f8fafc') : 'transparent',
+                                                '&:hover': { bgcolor: isGold ? '#fffbeb' : '#f8fafc' },
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                                                <Typography sx={{ fontWeight: 700, fontSize: '0.9rem', color: isGold ? '#b45309' : '#334155' }}>
+                                                    {isGold ? 'Gold Strategy' : 'Silver Strategy'}
+                                                </Typography>
+                                                {isGold ? <ShowChartIcon sx={{ fontSize: 16, color: '#d97706' }} /> : <TrendingUpIcon sx={{ fontSize: 16, color: '#64748b' }} />}
+                                            </Box>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <AccessTimeIcon sx={{ fontSize: 12, color: '#94a3b8' }} />
+                                                <Typography sx={{ fontSize: '0.7rem', color: '#94a3b8', fontFamily: 'JetBrains Mono' }}>
+                                                    INTEL REPORT
+                                                </Typography>
+                                            </Box>
+                                        </Box>
+                                    )
+                                })}
                             </Box>
                         ))}
-                    </List>
-                </div>
-            </div>
+                    </Box>
+                </Box>
 
-            {/* Content */}
-            <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
-                {selectedReport && (
-                    <div className="p-3 border-b border-slate-200 bg-white flex justify-end">
-                         <Tooltip title="Export as Image">
-                            <Button 
-                                variant="outlined" 
-                                size="small" 
-                                startIcon={exporting ? <CircularProgress size={16} /> : <DownloadIcon />} 
-                                onClick={handleExportImage}
-                                disabled={exporting || loadingContent}
-                                sx={{ color: '#b45309', borderColor: '#d97706', '&:hover': { bgcolor: '#fffbeb', borderColor: '#b45309'} }}
-                            >
-                                {exporting ? 'Processing...' : 'Export View'}
-                            </Button>
-                        </Tooltip>
-                    </div>
-                )}
-
-                <div className="flex-1 overflow-y-auto p-6 md:p-10 custom-scrollbar">
+                {/* Right: Reading Pane */}
+                <Box sx={{ flex: 1, overflowY: 'auto', p: 4, bgcolor: '#f8fafc' }}>
                     {selectedReport ? (
-                        <div ref={reportRef} className="max-w-4xl mx-auto bg-white border border-slate-200 rounded-xl shadow-sm min-h-[80vh] flex flex-col">
-                            <div className="p-8 border-b border-slate-100 bg-gradient-to-r from-amber-50 via-white to-white rounded-t-xl">
-                                <div className="flex justify-between items-start mb-4">
-                                     <div>
-                                        <Typography variant="overline" className="text-amber-600 font-bold tracking-[0.2em] block mb-2">
-                                            COMMODITY INTELLIGENCE
-                                        </Typography>
-                                        <Typography variant="h3" className="font-extrabold text-slate-900 tracking-tight">
-                                            {selectedReport.fund_name}
-                                        </Typography>
-                                     </div>
-                                     <Chip 
-                                        label={selectedReport.date} 
-                                        icon={<CalendarTodayIcon style={{fontSize: 14}}/>}
-                                        className="bg-white border border-slate-200 text-slate-500 font-mono"
-                                        size="small"
-                                     />
-                                </div>
-                                <div className="flex gap-2">
-                                    <Chip 
-                                        label="AI DEEP DIVE" 
-                                        size="small" 
-                                        className="bg-amber-100 text-amber-800 font-bold text-xs" 
-                                    />
-                                    <Chip 
-                                        label={selectedReport.fund_code === 'gold' ? "XAU/USD" : "XAG/USD"} 
-                                        size="small" 
+                        <Box sx={{ maxWidth: '900px', mx: 'auto' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+                                <Tooltip title="Export High-Res Image">
+                                    <Button
                                         variant="outlined"
-                                        className="text-slate-500 border-slate-300 text-xs font-mono" 
-                                    />
-                                </div>
-                            </div>
-                            
-                            <div className="p-10 md:p-12 flex-1 markdown-body bg-white">
-                                {loadingContent ? (
-                                    <div className="flex justify-center p-20"><CircularProgress size={40} className="text-amber-600"/></div>
-                                ) : (
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                        {reportContent}
-                                    </ReactMarkdown>
-                                )}
-                            </div>
-                            
-                            <div className="p-6 bg-slate-50 border-t border-slate-100 text-center rounded-b-xl">
-                                <Typography variant="caption" className="text-slate-400 font-mono text-[10px] tracking-widest uppercase">
-                                    Generated by EastMoney Pro AI • Confidential • {new Date().getFullYear()}
-                                </Typography>
-                            </div>
-                        </div>
+                                        size="small"
+                                        onClick={handleExportImage}
+                                        disabled={exporting || loadingContent}
+                                        startIcon={exporting ? <CircularProgress size={14} /> : <DownloadIcon />}
+                                        sx={{ color: '#64748b', borderColor: '#cbd5e1', bgcolor: '#fff', '&:hover': { bgcolor: '#f1f5f9' } }}
+                                    >
+                                        Export View
+                                    </Button>
+                                </Tooltip>
+                            </Box>
+
+                            <Paper 
+                                ref={reportRef}
+                                elevation={0} 
+                                sx={{ 
+                                    borderRadius: '16px', 
+                                    overflow: 'hidden', 
+                                    border: '1px solid #e2e8f0',
+                                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' 
+                                }}
+                            >
+                                {/* Report Header */}
+                                <Box sx={{ 
+                                    p: 5, 
+                                    background: selectedReport.fund_code === 'gold' 
+                                        ? 'linear-gradient(to right, #fffbeb, #fff)' 
+                                        : 'linear-gradient(to right, #f8fafc, #fff)',
+                                    borderBottom: '1px solid #f1f5f9'
+                                }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <Typography variant="overline" sx={{ color: selectedReport.fund_code === 'gold' ? '#d97706' : '#64748b', fontWeight: 800, letterSpacing: '0.1em' }}>
+                                                INTELLIGENCE BRIEF
+                                            </Typography>
+                                            <Typography variant="h3" sx={{ fontWeight: 800, color: '#0f172a', mt: 1, mb: 2 }}>
+                                                {selectedReport.fund_name}
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', gap: 1.5 }}>
+                                                <Chip 
+                                                    label={selectedReport.date} 
+                                                    size="small" 
+                                                    icon={<CalendarTodayIcon style={{fontSize: 14}} />}
+                                                    sx={{ bgcolor: '#fff', border: '1px solid #e2e8f0', fontWeight: 600, color: '#64748b' }} 
+                                                />
+                                                <Chip 
+                                                    label={selectedReport.fund_code === 'gold' ? "XAU/USD" : "XAG/USD"} 
+                                                    size="small" 
+                                                    variant="outlined"
+                                                    sx={{ borderColor: '#cbd5e1', color: '#64748b', fontFamily: 'JetBrains Mono', fontWeight: 600 }} 
+                                                />
+                                            </Box>
+                                        </div>
+                                        <Box sx={{ 
+                                            width: 64, 
+                                            height: 64, 
+                                            borderRadius: '16px', 
+                                            bgcolor: selectedReport.fund_code === 'gold' ? '#fcd34d' : '#cbd5e1',
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            justifyContent: 'center',
+                                            fontSize: '1.5rem',
+                                            fontWeight: 900,
+                                            color: '#fff',
+                                            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'
+                                        }}>
+                                            {selectedReport.fund_code === 'gold' ? 'Au' : 'Ag'}
+                                        </Box>
+                                    </Box>
+                                </Box>
+
+                                {/* Report Body */}
+                                <Box sx={{ p: 6, bgcolor: '#fff', minHeight: '600px' }} className="markdown-body">
+                                    {loadingContent ? (
+                                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 20 }}>
+                                            <CircularProgress sx={{ color: selectedReport.fund_code === 'gold' ? '#d97706' : '#64748b' }} />
+                                        </Box>
+                                    ) : (
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                            {reportContent}
+                                        </ReactMarkdown>
+                                    )}
+                                </Box>
+
+                                {/* Footer */}
+                                <Box sx={{ p: 3, bgcolor: '#f8fafc', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+                                    <Typography variant="caption" sx={{ color: '#94a3b8', fontFamily: 'JetBrains Mono', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em' }}>
+                                        GENERATED BY VIBE_ALPHA AI CORE • {new Date().getFullYear()}
+                                    </Typography>
+                                </Box>
+                            </Paper>
+                        </Box>
                     ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                            <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-6">
-                                <MonetizationOnIcon sx={{ fontSize: 48, color: '#cbd5e1' }} />
-                            </div>
-                            <Typography variant="h6" className="text-slate-500 font-medium">No Report Selected</Typography>
-                            <Typography variant="body2" className="text-slate-400 mt-2">Select a report from the list or generate a new analysis.</Typography>
-                        </div>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>
+                            <TrendingUpIcon sx={{ fontSize: 64, mb: 2, opacity: 0.2 }} />
+                            <Typography sx={{ fontWeight: 600 }}>Select a strategic report to view details</Typography>
+                        </Box>
                     )}
-                </div>
-            </div>
+                </Box>
+            </Box>
         </div>
     );
 }

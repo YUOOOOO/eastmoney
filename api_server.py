@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import pandas as pd
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,6 +89,28 @@ class CommodityAnalyzeRequest(BaseModel):
     asset: str # "gold" or "silver"
 
 # --- Helpers ---
+def sanitize_data(data):
+    """Recursively replace NaN/Inf and non-JSON types (like pd.NA) for JSON compliance."""
+    import math
+    import pandas as pd
+    import numpy as np
+    
+    if isinstance(data, dict):
+        return {k: sanitize_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_data(v) for v in data]
+    elif pd.isna(data): # Handles None, np.nan, pd.NA, pd.NaT
+        return None
+    elif isinstance(data, (np.float64, np.float32, float)):
+        if math.isnan(data) or math.isinf(data):
+            return None
+        return float(data)
+    elif isinstance(data, (np.int64, np.int32, int)):
+        return int(data)
+    elif isinstance(data, (datetime, pd.Timestamp)):
+        return data.strftime('%Y-%m-%d %H:%M:%S')
+    return data
+
 def load_env_file():
     env_vars = {}
     if os.path.exists(ENV_FILE):
@@ -372,7 +395,37 @@ async def generate_report_endpoint(mode: str, request: GenerateRequest = None):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/funds", response_model=List[FundItem])
+@app.get("/api/market/indices")
+def get_market_indices():
+    """获取主要市场指数实时快照 (使用全球指数接口)"""
+    try:
+        import akshare as ak
+        # 获取全球指数行情快照
+        indices_df = ak.index_global_spot_em()
+        
+        target_names = [
+            "上证指数", "深证成指", "创业板指",
+            "恒生指数", "日经225", "纳斯达克", "标普500"
+        ]
+        results = []
+        
+        for name in target_names:
+            row = indices_df[indices_df['名称'] == name]
+            if not row.empty:
+                results.append({
+                    "name": name,
+                    "code": str(row.iloc[0].get('代码', '')),
+                    "price": float(row.iloc[0]['最新价']),
+                    "change_pct": float(row.iloc[0]['涨跌幅']),
+                    "change_val": float(row.iloc[0]['涨跌额'])
+                })
+        
+        return sanitize_data(results)
+    except Exception as e:
+        print(f"Error fetching indices via index_global_spot_em: {e}")
+        return []
+
+@app.get("/api/funds")
 async def get_funds_endpoint():
     try:
         funds = get_all_funds()
@@ -550,6 +603,139 @@ async def list_sentiment_reports():
             
     return reports
 
+
+@app.get("/api/market/funds/{code}/details")
+async def get_fund_market_details(code: str):
+    """获取基金在市场上的详细信息（经理、规模、业绩、持仓等）"""
+    try:
+        # 使用 akshare 获取基金基本信息
+        import akshare as ak
+        # 1. 基础信息
+        df_info = ak.fund_individual_basic_info_xq(symbol=code)
+        raw_info = dict(zip(df_info.iloc[:, 0], df_info.iloc[:, 1]))
+        
+        # 模糊匹配键名的辅助函数
+        def get_val(d, *keys):
+            for k in d.keys():
+                for target in keys:
+                    if target in str(k):
+                        return d[k]
+            return "---"
+
+        # 标准化常用键名，确保前端能拿到数据
+        info_dict = {
+            "manager": get_val(raw_info, "经理"),
+            "size": get_val(raw_info, "规模"),
+            "est_date": get_val(raw_info, "成立"),
+            "type": get_val(raw_info, "类型"),
+            "company": get_val(raw_info, "公司"),
+            "rating": get_val(raw_info, "评级"),
+            "nav": get_val(raw_info, "净值", "价格")
+        }
+        
+        # 如果 basic_info 没拿到 nav，尝试从历史净值中拿最新的
+        if info_dict["nav"] == "---":
+            try:
+                # 使用 em 接口获取历史净值作为兜底
+                df_nav = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+                if df_nav is not None and not df_nav.empty:
+                    latest_row = df_nav.iloc[-1]
+                    # 优先寻找包含'单位净值'的列，其次寻找包含'净值'的列，最后用索引
+                    nav_col = None
+                    for col in df_nav.columns:
+                        if '单位净值' in str(col):
+                            nav_col = col
+                            break
+                    if not nav_col:
+                        for col in df_nav.columns:
+                            if '净值' in str(col):
+                                nav_col = col
+                                break
+                    if not nav_col and len(df_nav.columns) >= 2:
+                        nav_col = df_nav.columns[1]
+                    
+                    if nav_col:
+                        info_dict["nav"] = str(latest_row[nav_col])
+            except:
+                pass
+
+        # 2. 业绩评价 (使用更全的 雪球 接口)
+        perf_list = []
+        try:
+            df_perf = ak.fund_individual_achievement_xq(symbol=code)
+            if df_perf is not None and not df_perf.empty:
+                # 映射列名以匹配前端
+                # 原列名: ['业绩类型', '周期', '本产品区间收益', '本产品最大回撤', '周期收益同类排名']
+                for _, row in df_perf.iterrows():
+                    perf_list.append({
+                        "时间范围": row.get("周期", "---"),
+                        "收益率": row.get("本产品区间收益", 0.0),
+                        "同类排名": row.get("周期收益同类排名", "---")
+                    })
+        except:
+            pass
+
+        # 3. 持仓分析 (作为板块信息的参考)
+        portfolio = []
+        try:
+            df_hold = ak.fund_portfolio_hold_em(symbol=code)
+            if df_hold is not None and not df_hold.empty:
+                portfolio = df_hold.head(10).to_dict(orient='records')
+        except:
+            pass
+
+        return sanitize_data({
+            "info": info_dict,
+            "performance": perf_list,
+            "portfolio": portfolio
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error fetching fund details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/market/funds/{code}/nav")
+async def get_fund_nav_history(code: str):
+    """获取基金历史净值（用于绘图）"""
+    try:
+        import akshare as ak
+        # 获取单位净值走势
+        df_nav = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+        if df_nav is not None and not df_nav.empty:
+            # 只取最近 100 条数据以减轻传输压力
+            df_nav = df_nav.tail(100).copy()
+            
+            # 统一列名: 优先根据关键词匹配，兜底使用索引
+            found_date = False
+            found_value = False
+            for col in df_nav.columns:
+                col_str = str(col)
+                if '日期' in col_str or 'date' in col_str.lower():
+                    df_nav = df_nav.rename(columns={col: 'date'})
+                    found_date = True
+                if '净值' in col_str or 'value' in col_str.lower():
+                    df_nav = df_nav.rename(columns={col: 'value'})
+                    found_value = True
+            
+            # 兜底逻辑
+            if not found_date and len(df_nav.columns) >= 1:
+                df_nav.columns.values[0] = 'date'
+            if not found_value and len(df_nav.columns) >= 2:
+                df_nav.columns.values[1] = 'value'
+            
+            # 确保 value 是数值型
+            df_nav['value'] = pd.to_numeric(df_nav['value'], errors='coerce')
+            # 移除 NaN
+            df_nav = df_nav.dropna(subset=['value'])
+            
+            return sanitize_data(df_nav[['date', 'value']].to_dict(orient='records'))
+        return []
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error fetching NAV history: {e}")
+        return []
 
 if __name__ == "__main__":
     import uvicorn

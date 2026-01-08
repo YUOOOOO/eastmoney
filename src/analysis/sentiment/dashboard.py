@@ -140,8 +140,6 @@ class SentimentDashboard:
         - **稳健型 (低吸/趋势)**: (给出1条可执行规则：例如“只做指数共振/只做情绪核心回踩”，并说明触发条件和止损。)
         """
         
-        print("DEBUG: Final prompt for LLM generated.",prompt)
-
         return self.llm.generate_content(prompt)
 
 if __name__ == "__main__":
