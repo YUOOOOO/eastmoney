@@ -43,7 +43,9 @@ def init_db():
             pre_market_time TEXT,
             post_market_time TEXT,
             is_active BOOLEAN DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER REFERENCES users(id),
+            UNIQUE(user_id, code)
         )
     ''')
     
@@ -52,6 +54,8 @@ def init_db():
     # But SQLite limitations on ALTER TABLE are tricky. 
     # For now, we add the column if missing.
     try:
+        # Check if user_id exists first to avoid error if table was just created with it
+        # Actually standard practice is just try add column
         c.execute('ALTER TABLE funds ADD COLUMN user_id INTEGER REFERENCES users(id)')
     except sqlite3.OperationalError:
         # Column likely exists
