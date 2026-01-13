@@ -42,33 +42,41 @@ export default function DashboardPage() {
     const [stats, setStats] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
-    const loadData = async () => {
-        if (!data) setLoading(true);
+    const loadOverview = async () => {
         try {
-            // Parallel fetch
-            const [overview, userStats] = await Promise.all([
-                fetchDashboardOverview(),
-                fetchDashboardStats()
-            ]);
+            const overview = await fetchDashboardOverview();
             setData(overview);
-            setStats(userStats);
         } catch (error) {
-            console.error("Failed to load dashboard", error);
+            console.error("Failed to load overview", error);
         } finally {
             setLoading(false);
         }
     };
 
+    const loadStats = async () => {
+        try {
+            const userStats = await fetchDashboardStats();
+            setStats(userStats);
+        } catch (error) {
+            console.error("Failed to load stats", error);
+        }
+    };
+
+    const loadAll = () => {
+        loadOverview();
+        loadStats();
+    };
+
     useEffect(() => {
-        loadData();
-        const interval = setInterval(loadData, 30000);
+        loadAll();
+        const interval = setInterval(loadAll, 60000); // Relaxed interval to 1 min since backend updates every 3 min
         return () => clearInterval(interval);
     }, []);
 
     if (loading && !data) return <Box className="h-screen flex items-center justify-center"><CircularProgress size={24} className="text-slate-400"/></Box>;
-    if (!data) return <Box className="p-10">{t('common.system_offline')}</Box>;
+    if (!data && !loading) return <Box className="p-10">{t('common.system_offline')}</Box>;
 
-    const { market_overview, gold_macro, sectors, abnormal_movements, top_flows } = data;
+    const { market_overview, gold_macro, sectors, abnormal_movements, top_flows } = data || {};
     // system_stats comes from separate API now
     const system_stats = stats;
     
@@ -92,7 +100,7 @@ export default function DashboardPage() {
                         className="h-5 text-[10px] font-bold"
                     />
                 </Box>
-                <IconButton size="small" onClick={loadData} className="bg-white border border-slate-200 shadow-sm hover:bg-slate-50">
+                <IconButton size="small" onClick={loadAll} className="bg-white border border-slate-200 shadow-sm hover:bg-slate-50">
                     <RefreshIcon fontSize="small" />
                 </IconButton>
             </Box>

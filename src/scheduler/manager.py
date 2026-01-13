@@ -1,11 +1,14 @@
+import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 import logging
 import asyncio
 from typing import Dict, Optional
 from src.storage.db import get_active_funds, get_fund_by_code
 from src.analysis.pre_market import PreMarketAnalyst
 from src.analysis.post_market import PostMarketAnalyst
+from src.analysis.dashboard import DashboardService
 from src.report_gen import save_report
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,7 @@ class SchedulerManager:
         """Load jobs from DB and start"""
         print("Starting Scheduler Manager...")
         self.refresh_all_jobs()
+        self.add_dashboard_refresh_job()
         
     def refresh_all_jobs(self):
         """Clear all and reload from DB (All users)"""
@@ -32,6 +36,30 @@ class SchedulerManager:
         funds = get_active_funds(user_id=None) 
         for fund in funds:
             self.add_fund_jobs(fund)
+        # Re-add dashboard job since we removed all
+        self.add_dashboard_refresh_job()
+
+    def add_dashboard_refresh_job(self):
+        """Schedule dashboard cache refresh every 3 minutes"""
+        job_id = "dashboard_refresh"
+        if not self.scheduler.get_job(job_id):
+            self.scheduler.add_job(
+                self.refresh_dashboard_cache,
+                trigger=IntervalTrigger(minutes=3),
+                id=job_id,
+                replace_existing=True
+            )
+            print("Scheduled dashboard cache refresh every 3 minutes")
+
+    def refresh_dashboard_cache(self):
+        """Worker to refresh global dashboard cache"""
+        try:
+            # Report dir is not critical for global market data, just pass current dir
+            service = DashboardService(os.getcwd())
+            service.get_full_dashboard(force_refresh=True)
+            print("Dashboard cache refreshed.")
+        except Exception as e:
+            print(f"Error refreshing dashboard cache: {e}")
 
     def add_fund_jobs(self, fund: Dict):
         """Add Pre/Post market jobs for a single fund"""

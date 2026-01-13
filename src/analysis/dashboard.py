@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 import time
 import threading
+import concurrent.futures
 
 # Cache Setup
 _DASHBOARD_CACHE = {}
@@ -31,11 +32,12 @@ class DashboardService:
         with _DASHBOARD_CACHE_LOCK:
             _DASHBOARD_CACHE[key] = (data, time.time() + duration)
 
-    def get_market_overview(self) -> Dict[str, Any]:
+    def get_market_overview(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Section 1: Market Breadth, Indices, Turnover"""
         cache_key = "market_overview"
-        cached = self._get_cached_data(cache_key)
-        if cached: return cached
+        if not force_refresh:
+            cached = self._get_cached_data(cache_key)
+            if cached: return cached
 
         data = {
             "indices": [],
@@ -137,11 +139,12 @@ class DashboardService:
         self._set_cached_data(cache_key, data)
         return data
 
-    def get_gold_macro(self) -> Dict[str, Any]:
+    def get_gold_macro(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Section 2: Gold & Macro (YFinance)"""
         cache_key = "gold_macro"
-        cached = self._get_cached_data(cache_key)
-        if cached: return cached
+        if not force_refresh:
+            cached = self._get_cached_data(cache_key)
+            if cached: return cached
         
         data = {"symbol": "GC=F", "price": 0, "change_pct": 0, "dxy": 0}
         try:
@@ -166,11 +169,12 @@ class DashboardService:
         self._set_cached_data(cache_key, data)
         return data
 
-    def get_sectors(self) -> Dict[str, List]:
+    def get_sectors(self, force_refresh: bool = False) -> Dict[str, List]:
         """Section 3: Sector Performance"""
         cache_key = "sectors"
-        cached = self._get_cached_data(cache_key)
-        if cached: return cached
+        if not force_refresh:
+            cached = self._get_cached_data(cache_key)
+            if cached: return cached
         
         result = {"gainers": [], "losers": []}
         try:
@@ -200,11 +204,12 @@ class DashboardService:
         self._set_cached_data(cache_key, result)
         return result
 
-    def get_abnormal_movements(self) -> List[Dict]:
+    def get_abnormal_movements(self, force_refresh: bool = False) -> List[Dict]:
         """Section 4: Abnormal Movements (Stock Level Feed)"""
         cache_key = "abnormal_feed"
-        cached = self._get_cached_data(cache_key)
-        if cached: return cached
+        if not force_refresh:
+            cached = self._get_cached_data(cache_key)
+            if cached: return cached
         
         moves = []
         try:
@@ -245,11 +250,12 @@ class DashboardService:
         self._set_cached_data(cache_key, result, duration=30)
         return result
 
-    def get_top_holdings_changes(self) -> List[Dict]:
+    def get_top_holdings_changes(self, force_refresh: bool = False) -> List[Dict]:
         """Section 5: Top Capital Flow Stocks"""
         cache_key = "top_flow"
-        cached = self._get_cached_data(cache_key)
-        if cached: return cached
+        if not force_refresh:
+            cached = self._get_cached_data(cache_key)
+            if cached: return cached
         
         stocks = []
         try:
@@ -323,13 +329,20 @@ class DashboardService:
                     
         return stats
 
-    def get_full_dashboard(self) -> Dict[str, Any]:
-        """Aggregate all GLOBAL data"""
-        return {
-            "market_overview": self.get_market_overview(),
-            "gold_macro": self.get_gold_macro(),
-            "sectors": self.get_sectors(),
-            "abnormal_movements": self.get_abnormal_movements(),
-            "top_flows": self.get_top_holdings_changes(),
-            # System stats removed from global cache
-        }
+    def get_full_dashboard(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """Aggregate all GLOBAL data with parallelism"""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_overview = executor.submit(self.get_market_overview, force_refresh)
+            future_gold = executor.submit(self.get_gold_macro, force_refresh)
+            future_sectors = executor.submit(self.get_sectors, force_refresh)
+            future_abnormal = executor.submit(self.get_abnormal_movements, force_refresh)
+            future_flows = executor.submit(self.get_top_holdings_changes, force_refresh)
+
+            return {
+                "market_overview": future_overview.result(),
+                "gold_macro": future_gold.result(),
+                "sectors": future_sectors.result(),
+                "abnormal_movements": future_abnormal.result(),
+                "top_flows": future_flows.result(),
+                # System stats removed from global cache
+            }
