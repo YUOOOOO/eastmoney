@@ -18,11 +18,11 @@ class DashboardService:
     def __init__(self, report_dir: str):
         self.report_dir = report_dir
 
-    def _get_cached_data(self, key: str):
+    def _get_cached_data(self, key: str, ignore_expiry: bool = False):
         with _DASHBOARD_CACHE_LOCK:
             if key in _DASHBOARD_CACHE:
                 data, expiry = _DASHBOARD_CACHE[key]
-                if time.time() < expiry:
+                if ignore_expiry or time.time() < expiry:
                     return data
                 else:
                     del _DASHBOARD_CACHE[key]
@@ -32,11 +32,20 @@ class DashboardService:
         with _DASHBOARD_CACHE_LOCK:
             _DASHBOARD_CACHE[key] = (data, time.time() + duration)
 
+    def _is_china_market_open(self) -> bool:
+        """Check if current time is between 09:30 and 15:00"""
+        now = datetime.now()
+        hm = now.hour * 100 + now.minute
+        return 930 <= hm < 1500
+
     def get_market_overview(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Section 1: Market Breadth, Indices, Turnover"""
         cache_key = "market_overview"
+        # If market closed, use cache indefinitely (ignore expiry)
+        ignore_expiry = not self._is_china_market_open()
+        
         if not force_refresh:
-            cached = self._get_cached_data(cache_key)
+            cached = self._get_cached_data(cache_key, ignore_expiry=ignore_expiry)
             if cached: return cached
 
         data = {
@@ -47,58 +56,40 @@ class DashboardService:
         }
 
         try:
-            # 1. Indices (Global Spot - Faster)
-            # Replaces stock_zh_index_spot_em which fetches ALL indices (slow)
-            try:
-                global_df = ak.index_global_spot_em()
-            except Exception as e:
-                print(f"Global indices error: {e}")
-                global_df = pd.DataFrame()
-
-            targets = ["上证指数", "深证成指", "纳斯达克"]
-            
-            if not global_df.empty:
-                for name in targets:
-                    # Find by Name
-                    row = global_df[global_df['名称'] == name]
-                    if not row.empty:
-                        r = row.iloc[0]
-                        data["indices"].append({
-                            "name": name,
-                            "price": float(r['最新价']),
-                            "change": float(r['涨跌幅'])
-                        })
+            # 1. Indices - MOVED to separate API (get_market_indices)
+            # We no longer fetch them here to speed up the main dashboard load.
+            data["indices"] = []
             
             # 2. Turnover & Breadth
             # Breadth via Legu (Fast)
             try:
-                # legu_df = ak.stock_market_activity_legu()
-                # if not legu_df.empty:
-                #     # Convert to dict {item: value}
-                #     legu_map = dict(zip(legu_df['item'], legu_df['value']))
-                #     data["breadth"] = {
-                #         "up": int(float(legu_map.get("上涨", 0))),
-                #         "down": int(float(legu_map.get("下跌", 0))),
-                #         "flat": int(float(legu_map.get("平盘", 0))),
-                #         "limit_up": int(float(legu_map.get("涨停", 0))),
-                #         "limit_down": int(float(legu_map.get("跌停", 0)))
-                #     }
-                
-                df_spot = ak.stock_zh_a_spot_em()
-                if df_spot is not None and not df_spot.empty:
-                    up_count = len(df_spot[df_spot['涨跌幅'] > 0])
-                    down_count = len(df_spot[df_spot['涨跌幅'] < 0])
-                    flat_count = len(df_spot[df_spot['涨跌幅'] == 0])
-                    limit_up = len(df_spot[df_spot['涨跌幅'] >= 9.8]) # 粗略统计
-                    limit_down = len(df_spot[df_spot['涨跌幅'] <= -9.8])
-
+                legu_df = ak.stock_market_activity_legu()
+                if not legu_df.empty:
+                    # Convert to dict {item: value}
+                    legu_map = dict(zip(legu_df['item'], legu_df['value']))
                     data["breadth"] = {
-                        "up": up_count,
-                        "down": down_count,
-                        "flat": flat_count,
-                        "limit_up": limit_up,
-                        "limit_down": limit_down
+                        "up": int(float(legu_map.get("上涨", 0))),
+                        "down": int(float(legu_map.get("下跌", 0))),
+                        "flat": int(float(legu_map.get("平盘", 0))),
+                        "limit_up": int(float(legu_map.get("涨停", 0))),
+                        "limit_down": int(float(legu_map.get("跌停", 0)))
                     }
+                
+                # df_spot = ak.stock_zh_a_spot_em()
+                # if df_spot is not None and not df_spot.empty:
+                #     up_count = len(df_spot[df_spot['涨跌幅'] > 0])
+                #     down_count = len(df_spot[df_spot['涨跌幅'] < 0])
+                #     flat_count = len(df_spot[df_spot['涨跌幅'] == 0])
+                #     limit_up = len(df_spot[df_spot['涨跌幅'] >= 9.8]) # 粗略统计
+                #     limit_down = len(df_spot[df_spot['涨跌幅'] <= -9.8])
+
+                #     data["breadth"] = {
+                #         "up": up_count,
+                #         "down": down_count,
+                #         "flat": flat_count,
+                #         "limit_up": limit_up,
+                #         "limit_down": limit_down
+                #     }
             except Exception as e:
                 print(f"stock_zh_a_spot_em fetch failed: {e}")
 
@@ -172,8 +163,10 @@ class DashboardService:
     def get_sectors(self, force_refresh: bool = False) -> Dict[str, List]:
         """Section 3: Sector Performance"""
         cache_key = "sectors"
+        ignore_expiry = not self._is_china_market_open()
+        
         if not force_refresh:
-            cached = self._get_cached_data(cache_key)
+            cached = self._get_cached_data(cache_key, ignore_expiry=ignore_expiry)
             if cached: return cached
         
         result = {"gainers": [], "losers": []}
@@ -207,8 +200,10 @@ class DashboardService:
     def get_abnormal_movements(self, force_refresh: bool = False) -> List[Dict]:
         """Section 4: Abnormal Movements (Stock Level Feed)"""
         cache_key = "abnormal_feed"
+        ignore_expiry = not self._is_china_market_open()
+        
         if not force_refresh:
-            cached = self._get_cached_data(cache_key)
+            cached = self._get_cached_data(cache_key, ignore_expiry=ignore_expiry)
             if cached: return cached
         
         moves = []
@@ -253,8 +248,10 @@ class DashboardService:
     def get_top_holdings_changes(self, force_refresh: bool = False) -> List[Dict]:
         """Section 5: Top Capital Flow Stocks"""
         cache_key = "top_flow"
+        ignore_expiry = not self._is_china_market_open()
+        
         if not force_refresh:
-            cached = self._get_cached_data(cache_key)
+            cached = self._get_cached_data(cache_key, ignore_expiry=ignore_expiry)
             if cached: return cached
         
         stocks = []

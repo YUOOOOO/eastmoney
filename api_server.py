@@ -503,13 +503,31 @@ _INDICES_CACHE = {
 @app.get("/api/market/indices")
 def get_market_indices():
     import time
+    from datetime import datetime
     global _INDICES_CACHE
     
-    now = time.time()
-    if _INDICES_CACHE["data"] and now < _INDICES_CACHE["expiry"]:
+    now_ts = time.time()
+    now_dt = datetime.now()
+    current_hm = now_dt.hour * 100 + now_dt.minute
+    
+    # Active Hours: 08:00 - 15:00 OR 21:30 - 05:00
+    # Inactive Hours: 15:00 - 21:30 AND 05:00 - 08:00
+    
+    is_active_session_1 = 800 <= current_hm < 1500
+    is_active_session_2 = (2130 <= current_hm) or (current_hm < 500)
+    is_active = is_active_session_1 or is_active_session_2
+
+    # If inactive and we have data, use it indefinitely
+    if not is_active and _INDICES_CACHE["data"]:
+        return _INDICES_CACHE["data"]
+    
+    # Otherwise (Active OR Empty Cache), check standard expiry
+    if _INDICES_CACHE["data"] and now_ts < _INDICES_CACHE["expiry"]:
         return _INDICES_CACHE["data"]
 
     try:
+        print("Fetching market indices via index_global_spot_em...")
+
         import akshare as ak
         indices_df = ak.index_global_spot_em()
         
@@ -534,7 +552,8 @@ def get_market_indices():
         
         if data:
             _INDICES_CACHE["data"] = data
-            _INDICES_CACHE["expiry"] = now + 60
+            # Cache for 60 seconds during active time
+            _INDICES_CACHE["expiry"] = now_ts + 60
             
         return data
     except Exception as e:

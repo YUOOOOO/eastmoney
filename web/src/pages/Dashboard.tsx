@@ -15,8 +15,8 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import PublicIcon from '@mui/icons-material/Public';
 import StorageIcon from '@mui/icons-material/Storage';
 import TimelineIcon from '@mui/icons-material/Timeline';
-import { fetchDashboardOverview, fetchDashboardStats } from '../api';
-
+import { fetchDashboardOverview, fetchDashboardStats, fetchMarketIndices,  } from '../api';
+import type {IndexData} from '../api';
 // --- Utility Components ---
 
 const NumberMono = ({ children, className = "", style = {} }: any) => (
@@ -35,11 +35,13 @@ const ColorVal = ({ val, suffix = "", bold = true }: { val: number, suffix?: str
 };
 
 // --- Page Component ---
+const AllowedNames = ["深证成指", "上证指数","创业板指"];
 
 export default function DashboardPage() {
     const { t } = useTranslation();
     const [data, setData] = useState<any>(null);
     const [stats, setStats] = useState<any>(null);
+    const [indices, setIndices] = useState<IndexData[]>([]);
     const [loading, setLoading] = useState(true);
 
     const loadOverview = async () => {
@@ -62,14 +64,25 @@ export default function DashboardPage() {
         }
     };
 
+
+    const loadIndices = async () => {
+        try {
+            const idxs = await fetchMarketIndices();
+            setIndices(idxs);
+        } catch (error) {
+            console.error("Failed to load indices", error);
+        }
+    };
+
     const loadAll = () => {
         loadOverview();
         loadStats();
+        loadIndices();
     };
 
     useEffect(() => {
         loadAll();
-        const interval = setInterval(loadAll, 60000); // Relaxed interval to 1 min since backend updates every 3 min
+        const interval = setInterval(loadAll, 120000); // Relaxed interval to 1 min since backend updates every 3 min
         return () => clearInterval(interval);
     }, []);
 
@@ -130,19 +143,23 @@ export default function DashboardPage() {
 
                 {/* 2. Market Indices (Expandable) */}
                 <Box className="flex-[2] flex flex-col sm:flex-row border-b lg:border-b-0 lg:border-r border-slate-100">
-                    {market_overview?.indices?.map((idx: any, i: number) => (
+                    {indices.length > 0 ? indices.filter(idx => AllowedNames.includes(idx.name)).map((idx: IndexData, i: number) => (
                         <Box key={idx.name} className={`flex-1 p-5 flex flex-col justify-center hover:bg-slate-50 transition-colors ${i > 0 ? 'border-t sm:border-t-0 sm:border-l border-slate-100' : ''}`}>
                             <Typography variant="caption" className="text-slate-400 font-bold uppercase text-[10px] truncate">{idx.name}</Typography>
                             <Typography variant="h5" className="font-bold text-slate-800 leading-tight my-2">
                                 <NumberMono>{idx.price}</NumberMono>
                             </Typography>
                             <Box className="flex items-center gap-2">
-                                <span className={`text-sm font-bold px-1.5 py-0.5 rounded ${idx.change >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                                    {idx.change >= 0 ? '+' : ''}{idx.change}%
+                                <span className={`text-sm font-bold px-1.5 py-0.5 rounded ${idx.change_pct >= 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                    {idx.change_pct >= 0 ? '+' : ''}{idx.change_pct}%
                                 </span>
                             </Box>
                         </Box>
-                    ))}
+                    )) : (
+                        <Box className="w-full h-full flex items-center justify-center p-5">
+                             <CircularProgress size={20} className="text-slate-300" />
+                        </Box>
+                    )}
                 </Box>
 
                 {/* 3. Sentiment & Turnover */}
