@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Body, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # Ensure src is in path
@@ -79,6 +81,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 配置静态文件服务 - 为前端构建文件
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.exists(STATIC_DIR):
+    # 挂载静态资源目录
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+    
+    # 根路径返回前端 index.html
+    @app.get("/")
+    async def serve_frontend():
+        index_file = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return {"message": "Frontend not built. Please build frontend first."}
+    
+    # 处理前端路由，所有非API路径都返回 index.html
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # 如果是 API 路径，跳过（会由其他路由处理）
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+        
+        # 检查是否是静态资源文件
+        static_file = os.path.join(STATIC_DIR, full_path)
+        if os.path.exists(static_file) and os.path.isfile(static_file):
+            return FileResponse(static_file)
+        
+        # 其他路径返回 index.html (SPA路由)
+        index_file = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        
+        raise HTTPException(status_code=404, detail="Not found")
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 @app.get("/api/market/funds")
 async def search_market_funds(q: str):
