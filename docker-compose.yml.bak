@@ -1,0 +1,35 @@
+services:
+  # 后端服务
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: eastmoney-backend
+    restart: unless-stopped
+    ports:
+      - "9000:9000" # 暴露 9000 端口给宿主机，供宿主机的 Nginx 反代
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./config:/app/config
+      - ./.env:/app/.env
+    environment:
+      - TZ=Asia/Shanghai
+      - DB_FILE_PATH=/app/data/funds.db
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./web
+    container_name: eastmoney-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
