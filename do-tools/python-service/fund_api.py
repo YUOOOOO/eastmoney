@@ -125,33 +125,47 @@ def get_fund_info(fund_code: str) -> Dict:
         # 1. 尝试获取基本信息
         try:
             print(f"DEBUG: Fetching basic info for {fund_code}...")
-            df_basic = ak.fund_individual_basic_info_em(symbol=fund_code)
-            if not df_basic.empty:
-               # 打印前几行用于调试
-               print(f"DEBUG: Basic info shape: {df_basic.shape}")
-               print(f"DEBUG: Basic info columns: {df_basic.columns.tolist()}") 
-               print(f"DEBUG: Basic info first row: {df_basic.iloc[0].to_dict()}")
-
-               # 策略1: 标准 item/value 结构
-               if 'item' in df_basic.columns and 'value' in df_basic.columns:
-                   for _, row in df_basic.iterrows():
-                       basic_info[row['item']] = row['value']
-               
-               # 策略2: 单行宽表 (columns 就是字段名)
-               elif len(df_basic) == 1:
-                   # 直接将列名作为 key
-                   row = df_basic.iloc[0]
-                   for col in df_basic.columns:
-                       basic_info[col] = str(row[col])
-               
-               # 策略3: 两列结构但列名不是 item/value (通常第一列是key，第二列是value)
-               elif df_basic.shape[1] == 2:
-                   cols = df_basic.columns
-                   for _, row in df_basic.iterrows():
-                       basic_info[str(row[cols[0]])] = str(row[cols[1]])
-
+            # 尝试使用雪球接口作为替代 (用户环境有 fund_individual_basic_info_xq)
+            if hasattr(ak, 'fund_individual_basic_info_xq'):
+                 df_basic = ak.fund_individual_basic_info_xq(symbol=fund_code)
+                 if not df_basic.empty:
+                    print(f"DEBUG: Basic info (XQ) shape: {df_basic.shape}")
+                    # 雪球接口通常返回宽表
+                    if len(df_basic) > 0:
+                        row = df_basic.iloc[0]
+                        # 转换雪球字段到我们需要的基本字段
+                        # 这里打印出来以便确认字段名，通常包含: 基金经理, 基金规模, 评级等
+                        basic_info = row.to_dict()
+                        # 尝试做一些映射
+                        if '基金经理' in basic_info: basic_info['Manager'] = basic_info['基金经理']
+                        if '资产规模' in basic_info: basic_info['Asset Size'] = basic_info['资产规模']
         except Exception as e:
-            print(f"Error fetching basic info: {e}")
+            print(f"Error fetching basic info (XQ): {e}")
+
+        # 2. 补充获取基金规模
+        if '基金规模' not in basic_info and 'Asset Size' not in basic_info:
+            try:
+                print("DEBUG: Fetching fund scale history...")
+                # fund_scale_change_em 存在且通常需要位置参数
+                df_scale = ak.fund_scale_change_em(fund_code)
+                if not df_scale.empty:
+                    # 取最新一条
+                    latest_scale = df_scale.iloc[-1]
+                    basic_info['基金规模'] = f"{latest_scale.get('净资产', '---')}亿"
+            except Exception as e:
+                print(f"Error fetching fund scale: {e}")
+
+        # 3. 补充获取基金经理
+        if '基金经理' not in basic_info and 'Manager' not in basic_info:
+            try:
+                print("DEBUG: Fetching fund manager...")
+                # 使用 fund_manager_em
+                df_manager = ak.fund_manager_em(fund_code)
+                if not df_manager.empty:
+                    latest_manager = df_manager.iloc[-1]
+                    basic_info['基金经理'] = latest_manager.get('姓名', '---')
+            except Exception as e:
+                print(f"Error fetching fund manager: {e}")
 
         # 2. 补充获取基金规模 (如果基本信息里没有)
         if '基金规模' not in basic_info and 'Asset Size' not in basic_info:
