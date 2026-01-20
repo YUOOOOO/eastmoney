@@ -3,7 +3,6 @@ import config from '../config/index.js'
 import defineUser from './User.js'
 import defineSettings from './Settings.js'
 import defineChatHistory from './ChatHistory.js'
-import defineFund from './Fund.js'
 
 // 创建 Sequelize 实例
 const sequelize = new Sequelize({
@@ -16,7 +15,6 @@ const sequelize = new Sequelize({
 const User = defineUser(sequelize)
 const Settings = defineSettings(sequelize)
 const ChatHistory = defineChatHistory(sequelize)
-const Fund = defineFund(sequelize)
 
 // 定义关联
 User.hasOne(Settings, { foreignKey: 'userId' })
@@ -24,9 +22,6 @@ Settings.belongsTo(User, { foreignKey: 'userId' })
 
 User.hasMany(ChatHistory, { foreignKey: 'userId' })
 ChatHistory.belongsTo(User, { foreignKey: 'userId' })
-
-User.hasMany(Fund, { foreignKey: 'userId' })
-Fund.belongsTo(User, { foreignKey: 'userId' })
 
 // 同步数据库 (开发环境)
 // 注意：SQLite 的 alter 模式有问题，使用手动迁移脚本代替
@@ -42,4 +37,4 @@ Fund.belongsTo(User, { foreignKey: 'userId' })
 // }
 
 // 导出
-export { sequelize, User, Settings, ChatHistory, Fund }
+export { sequelize, User, Settings, ChatHistory }

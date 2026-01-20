@@ -27,29 +27,9 @@ const routes = [
         component: Dashboard,
       },
       {
-        path: 'funds',
-        name: 'Funds',
-        component: () => import('../views/Funds.vue'),
-      },
-      {
-        path: 'funds/:id',
-        name: 'FundDetail',
-        component: () => import('../views/FundDetail.vue'),
-      },
-      {
-        path: 'stocks',
-        name: 'Stocks',
-        component: () => import('../views/stocks/index.vue'),
-      },
-      {
         path: 'ai-chat',
         name: 'AIChat',
         component: () => import('../views/ai-chat/index.vue'),
-      },
-      {
-        path: 'reports',
-        name: 'Reports',
-        component: () => import('../views/reports/index.vue'),
       },
       {
         path: 'settings',
