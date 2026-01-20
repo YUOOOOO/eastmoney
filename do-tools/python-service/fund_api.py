@@ -128,16 +128,28 @@ def get_fund_info(fund_code: str) -> Dict:
             df_basic = ak.fund_individual_basic_info_em(symbol=fund_code)
             if not df_basic.empty:
                # 打印前几行用于调试
+               print(f"DEBUG: Basic info shape: {df_basic.shape}")
                print(f"DEBUG: Basic info columns: {df_basic.columns.tolist()}") 
+               print(f"DEBUG: Basic info first row: {df_basic.iloc[0].to_dict()}")
+
+               # 策略1: 标准 item/value 结构
                if 'item' in df_basic.columns and 'value' in df_basic.columns:
                    for _, row in df_basic.iterrows():
                        basic_info[row['item']] = row['value']
+               
+               # 策略2: 单行宽表 (columns 就是字段名)
                elif len(df_basic) == 1:
-                   basic_info = df_basic.iloc[0].to_dict()
-               else:
-                   # 尝试转置或直接取值
-                   print("DEBUG: Basic info structure unknown, converting to dict records")
-                   print(df_basic.head().to_dict('records'))
+                   # 直接将列名作为 key
+                   row = df_basic.iloc[0]
+                   for col in df_basic.columns:
+                       basic_info[col] = str(row[col])
+               
+               # 策略3: 两列结构但列名不是 item/value (通常第一列是key，第二列是value)
+               elif df_basic.shape[1] == 2:
+                   cols = df_basic.columns
+                   for _, row in df_basic.iterrows():
+                       basic_info[str(row[cols[0]])] = str(row[cols[1]])
+
         except Exception as e:
             print(f"Error fetching basic info: {e}")
 
