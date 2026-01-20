@@ -74,31 +74,68 @@ def search_funds(query: str, limit: int = 10) -> List[Dict]:
         return []
 
 
+import pandas as pd
+from datetime import datetime, timedelta
+import inspect
+
+def get_fund_holdings(fund_code: str, year: str = None):
+    """
+    获取基金持仓信息（前十大重仓股）
+    """
+    current_year = str(datetime.now().year)
+    if not year:
+        year = current_year
+    
+    try:
+        sig = None
+        try:
+            sig = inspect.signature(ak.fund_portfolio_hold_em)
+        except Exception:
+            sig = None
+
+        def _call_holdings(target_year: str):
+            if sig and "symbol" in sig.parameters:
+                return ak.fund_portfolio_hold_em(symbol=fund_code, date=target_year)
+            try:
+                return ak.fund_portfolio_hold_em(fund_code, target_year)
+            except TypeError:
+                return ak.fund_portfolio_hold_em(code=fund_code, year=target_year)
+
+        df = _call_holdings(year)
+        
+        if df.empty and year == current_year:
+            prev_year = str(int(year) - 1)
+            df = _call_holdings(prev_year)
+
+        if not df.empty:
+            # 统一字段名（不同年份接口返回可能略有差异，这里简单处理）
+            return df.to_dict('records')
+        return []
+    except Exception as e:
+        print(f"Error fetching holdings for {fund_code}: {e}")
+        return []
+
 def get_fund_info(fund_code: str) -> Dict:
     """
     获取基金详细信息
-    
-    Args:
-        fund_code: 基金代码
-        
-    Returns:
-        基金信息字典
     """
     try:
-        # 1. 获取基金基本信息 (基金经理、规模、评级等)
-        # 注意：akshare 接口可能会变动，这里尝试获取
+        # 1. 获取基本信息 (增强容错)
         basic_info = {}
         try:
             df_basic = ak.fund_individual_basic_info_em(symbol=fund_code)
             if not df_basic.empty:
-                # 转为字典，假设 df_basic 只有一行或 key-value 形式
-                # 实际返回通常是 DataFrame column: value
-                for _, row in df_basic.iterrows():
-                    basic_info[row['item']] = row['value']
+               # 尝试不同的解析方式，这里假设是两列: item, value
+               if 'item' in df_basic.columns and 'value' in df_basic.columns:
+                   for _, row in df_basic.iterrows():
+                       basic_info[row['item']] = row['value']
+               # 如果是单行宽表
+               elif len(df_basic) == 1:
+                   basic_info = df_basic.iloc[0].to_dict()
         except Exception as e:
             print(f"Error fetching basic info: {e}")
 
-        # 2. 获取基金净值走势
+        # 2. 获取净值走势
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
         
         if df is None or df.empty:
@@ -114,21 +151,31 @@ def get_fund_info(fund_code: str) -> Dict:
                     cols[2]: '日增长率',
                 })
         
+        # 核心修复：按日期倒序排序
+        if '净值日期' in df.columns:
+            df['净值日期'] = pd.to_datetime(df['净值日期'], errors='coerce')
+            df = df.sort_values('净值日期', ascending=False).reset_index(drop=True)
+            df['净值日期'] = df['净值日期'].dt.strftime('%Y-%m-%d')
+        
         # 获取最新净值
         latest = df.iloc[0] if not df.empty else None
         
-        # 获取最近 100 条历史数据用于图表
+        # 获取最近 100 条历史数据
         history = df.head(100).to_dict('records') if not df.empty else []
+
+        # 3. 获取持仓数据
+        holdings = get_fund_holdings(fund_code)
         
         return {
             'code': fund_code,
             'latest_nav': float(latest.get('单位净值', 0)) if latest is not None else 0,
             'nav_date': str(latest.get('净值日期', '')) if latest is not None else '',
             'daily_growth': float(latest.get('日增长率', 0)) if latest is not None else 0,
-            'manager': basic_info.get('基金经理', '---'),
-            'fund_size': basic_info.get('基金规模', '---'),
-            'rating': basic_info.get('晨星评级', '---'), # 注意：akshare 可能不直接返回这个
-            'history': history
+            'manager': basic_info.get('基金经理', basic_info.get('Manager', '---')),
+            'fund_size': basic_info.get('基金规模', basic_info.get('Asset Size', '---')),
+            'rating': basic_info.get('晨星评级', basic_info.get('Rating', '---')),
+            'history': history,
+            'holdings': holdings
         }
         
     except Exception as e:
