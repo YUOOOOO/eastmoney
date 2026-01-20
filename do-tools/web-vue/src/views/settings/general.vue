@@ -29,7 +29,11 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 
-const tavilyApiKey = ref('')
+const settings = ref({
+  tavilyApiKey: '',
+})
+
+const loading = ref(true)
 const saving = ref(false)
 const showSuccess = ref(false)
 const error = ref('')
@@ -42,15 +46,15 @@ const loadSettings = async () => {
   try {
     const token = localStorage.getItem('token')
     const response = await axios.get('/api/settings', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     })
 
-    tavilyApiKey.value = response.data.settings.tavilyApiKey || ''
+    settings.value.tavilyApiKey = response.data.settings.tavilyApiKey
   } catch (err) {
     console.error('Load settings error:', err)
     error.value = '加载设置失败'
+  } finally {
+    loading.value = false
   }
 }
 
@@ -64,12 +68,10 @@ const saveSettings = async () => {
     await axios.put(
       '/api/settings',
       {
-        tavilyApiKey: tavilyApiKey.value,
+        tavilyApiKey: settings.value.tavilyApiKey,
       },
       {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       },
     )
 
@@ -79,7 +81,7 @@ const saveSettings = async () => {
     }, 3000)
   } catch (err) {
     console.error('Save settings error:', err)
-    error.value = err.response?.data?.message || '保存设置失败'
+    error.value = err.response?.data?.message || '保存失败'
   } finally {
     saving.value = false
   }
@@ -136,10 +138,22 @@ const saveSettings = async () => {
   transition: all 0.3s;
 }
 
-.form-field input:focus {
+.form-field input:focus,
+.form-field textarea:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-field textarea {
+  padding: 12px 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.3s;
+  resize: vertical;
+  min-height: 100px;
+  font-family: inherit;
 }
 
 .hint {

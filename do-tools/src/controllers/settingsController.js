@@ -25,6 +25,9 @@ export async function getSettings(req, res) {
         id: settings.id,
         aiModels: settings.aiModels || [],
         activeModelIndex: settings.activeModelIndex || 0,
+        systemPrompt: settings.systemPrompt || '',
+        recommendationPrompt: settings.recommendationPrompt || '',
+        marketSentimentPrompt: settings.marketSentimentPrompt || '',
         tavilyApiKey: settings.tavilyApiKey || '',
       },
     })
@@ -43,7 +46,14 @@ export async function getSettings(req, res) {
 export async function updateSettings(req, res) {
   try {
     const userId = req.user.id
-    const { aiModels, activeModelIndex, tavilyApiKey } = req.body
+    const {
+      aiModels,
+      activeModelIndex,
+      systemPrompt,
+      recommendationPrompt,
+      marketSentimentPrompt,
+      tavilyApiKey,
+    } = req.body
 
     let settings = await Settings.findOne({
       where: { userId },
@@ -55,19 +65,24 @@ export async function updateSettings(req, res) {
         userId,
         aiModels: aiModels || [],
         activeModelIndex: activeModelIndex || 0,
+        systemPrompt: systemPrompt || '',
+        recommendationPrompt: recommendationPrompt || '',
+        marketSentimentPrompt: marketSentimentPrompt || '',
         tavilyApiKey: tavilyApiKey || '',
       })
     } else {
       // 更新现有设置
-      await settings.update({
-        aiModels: aiModels || settings.aiModels,
-        activeModelIndex:
-          activeModelIndex !== undefined
-            ? activeModelIndex
-            : settings.activeModelIndex,
-        tavilyApiKey:
-          tavilyApiKey !== undefined ? tavilyApiKey : settings.tavilyApiKey,
-      })
+      if (aiModels !== undefined) settings.aiModels = aiModels
+      if (activeModelIndex !== undefined)
+        settings.activeModelIndex = activeModelIndex
+      if (systemPrompt !== undefined) settings.systemPrompt = systemPrompt
+      if (recommendationPrompt !== undefined)
+        settings.recommendationPrompt = recommendationPrompt
+      if (marketSentimentPrompt !== undefined)
+        settings.marketSentimentPrompt = marketSentimentPrompt
+      if (tavilyApiKey !== undefined) settings.tavilyApiKey = tavilyApiKey
+
+      await settings.save()
     }
 
     res.json({
@@ -76,6 +91,7 @@ export async function updateSettings(req, res) {
         id: settings.id,
         aiModels: settings.aiModels || [],
         activeModelIndex: settings.activeModelIndex || 0,
+        systemPrompt: settings.systemPrompt || '',
         tavilyApiKey: settings.tavilyApiKey || '',
       },
     })

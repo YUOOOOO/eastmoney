@@ -16,33 +16,50 @@
       </div>
 
       <!-- 模型卡片 -->
-      <div v-for="(model, index) in aiModels" :key="index" class="model-card">
+      <div
+        v-for="(model, index) in aiModels"
+        :key="index"
+        :class="['model-card', { active: activeModelIndex === index }]"
+        @click="selectModel(index)">
         <div class="card-header">
-          <h3>{{ model.name || '未命名模型' }}</h3>
+          <div class="header-left">
+            <div class="radio-indicator"></div>
+            <h3>{{ model.name || '未命名模型' }}</h3>
+          </div>
           <div class="card-actions">
+            <!-- 测试连接按钮 -->
+            <button
+              v-if="!editingIndex && model.apiKey"
+              @click.stop="testConnection(model)"
+              class="test-btn"
+              :class="{ testing: testingModelId === index }"
+              title="测试连接">
+              {{ testingModelId === index ? '测试中...' : '测试连接' }}
+            </button>
+
             <button
               v-if="editingIndex === index"
-              @click="saveModel(index)"
+              @click.stop="saveModel(index)"
               class="save-icon-btn"
               title="保存">
               ✓
             </button>
             <button
               v-if="editingIndex === index"
-              @click="cancelEdit(index)"
+              @click.stop="cancelEdit(index)"
               class="cancel-icon-btn"
               title="取消">
               ✕
             </button>
             <button
               v-else
-              @click="editModel(index)"
+              @click.stop="editModel(index)"
               class="edit-icon-btn"
               title="编辑">
               ✎
             </button>
             <button
-              @click="deleteModel(index)"
+              @click.stop="deleteModel(index)"
               class="delete-icon-btn"
               title="删除">
               🗑
@@ -98,7 +115,9 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 
 const aiModels = ref([])
+const activeModelIndex = ref(0)
 const editingIndex = ref(null)
+const testingModelId = ref(null)
 const saving = ref(false)
 const showSuccess = ref(false)
 const error = ref('')
@@ -117,9 +136,63 @@ const loadSettings = async () => {
     })
 
     aiModels.value = response.data.settings.aiModels || []
+    activeModelIndex.value = response.data.settings.activeModelIndex || 0
   } catch (err) {
     console.error('Load settings error:', err)
     error.value = '加载设置失败'
+  }
+}
+
+const selectModel = async (index) => {
+  if (editingIndex.value !== null) return
+  activeModelIndex.value = index
+
+  // 自动保存选择
+  try {
+    const token = localStorage.getItem('token')
+    await axios.put(
+      '/api/settings',
+      {
+        activeModelIndex: index,
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    )
+  } catch (err) {
+    console.error('Save selection error:', err)
+  }
+}
+
+const testConnection = async (model) => {
+  const index = aiModels.value.indexOf(model)
+  testingModelId.value = index
+
+  try {
+    const token = localStorage.getItem('token')
+
+    const response = await axios.post(
+      '/api/ai/test-connection',
+      {
+        apiKey: model.apiKey,
+        baseUrl: model.baseUrl || 'https://api.openai.com/v1',
+        name: model.name,
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    )
+
+    if (response.data.success) {
+      alert(`✅ ${model.name} 连接成功!`)
+    } else {
+      throw new Error(response.data.message)
+    }
+  } catch (err) {
+    const errorMsg = err.response?.data?.message || err.message
+    alert(`❌ 连接失败: ${errorMsg}`)
+  } finally {
+    testingModelId.value = null
   }
 }
 
@@ -156,6 +229,7 @@ const saveModel = async (index) => {
       '/api/settings',
       {
         aiModels: aiModels.value,
+        activeModelIndex: activeModelIndex.value,
       },
       {
         headers: {
@@ -307,12 +381,33 @@ const maskApiKey = (key) => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   transition: all 0.3s;
   border: 2px solid transparent;
+  cursor: pointer;
+  position: relative;
 }
 
 .model-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  border-color: #e0e0e0;
+}
+
+.model-card.active {
   border-color: #667eea;
+  background: #f0f5ff;
+}
+
+.model-card.active::after {
+  content: '当前使用';
+  position: absolute;
+  top: -12px;
+  right: 24px;
+  background: #667eea;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
 }
 
 .card-header {
@@ -321,7 +416,16 @@ const maskApiKey = (key) => {
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 2px solid #f0f0f0;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.05);
+  gap: 16px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0; /* 允许 flex item 缩小 */
 }
 
 .card-header h3 {
@@ -329,11 +433,67 @@ const maskApiKey = (key) => {
   font-weight: 700;
   color: #333;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+  flex-shrink: 0; /* 防止动作按钮被压缩 */
+}
+
+.radio-indicator {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #ddd;
+  position: relative;
+  transition: all 0.3s;
+  flex-shrink: 0; /* 防止 radio 被压缩 */
+}
+
+.model-card.active .radio-indicator {
+  border-color: #667eea;
+  background: #667eea;
+}
+
+.model-card.active .radio-indicator::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
+}
+
+.test-btn {
+  padding: 6px 12px;
+  border: 1px solid #e0e0e0;
+  background: white;
+  color: #666;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-right: 8px;
+  white-space: nowrap; /* 防止按钮文字换行 */
+}
+
+.test-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.test-btn.testing {
+  background: #f8f9fa;
+  color: #999;
+  cursor: wait;
 }
 
 .save-icon-btn,

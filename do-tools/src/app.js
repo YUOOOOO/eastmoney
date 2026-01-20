@@ -6,6 +6,7 @@ import config from './config/index.js'
 import './models/index.js' // 初始化数据库
 import authRoutes from './routes/auth.js'
 import settingsRoutes from './routes/settings.js'
+import aiRoutes from './routes/ai.js'
 
 const app = express()
 
@@ -40,6 +41,9 @@ app.use('/api/auth', authRoutes)
 
 // 设置路由
 app.use('/api/settings', settingsRoutes)
+
+// AI 路由
+app.use('/api/ai', aiRoutes)
 
 // 404 处理
 app.use((req, res) => {

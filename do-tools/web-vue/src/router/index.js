@@ -37,6 +37,11 @@ const routes = [
         component: () => import('../views/stocks/index.vue'),
       },
       {
+        path: 'ai-chat',
+        name: 'AIChat',
+        component: () => import('../views/ai-chat/index.vue'),
+      },
+      {
         path: 'reports',
         name: 'Reports',
         component: () => import('../views/reports/index.vue'),
@@ -49,6 +54,11 @@ const routes = [
             path: 'general',
             name: 'SettingsGeneral',
             component: () => import('../views/settings/general.vue'),
+          },
+          {
+            path: 'prompts',
+            name: 'SettingsPrompts',
+            component: () => import('../views/settings/prompts.vue'),
           },
           {
             path: 'ai-models',
