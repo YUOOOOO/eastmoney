@@ -85,7 +85,20 @@ def get_fund_info(fund_code: str) -> Dict:
         基金信息字典
     """
     try:
-        # 获取基金净值走势
+        # 1. 获取基金基本信息 (基金经理、规模、评级等)
+        # 注意：akshare 接口可能会变动，这里尝试获取
+        basic_info = {}
+        try:
+            df_basic = ak.fund_individual_basic_info_em(symbol=fund_code)
+            if not df_basic.empty:
+                # 转为字典，假设 df_basic 只有一行或 key-value 形式
+                # 实际返回通常是 DataFrame column: value
+                for _, row in df_basic.iterrows():
+                    basic_info[row['item']] = row['value']
+        except Exception as e:
+            print(f"Error fetching basic info: {e}")
+
+        # 2. 获取基金净值走势
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
         
         if df is None or df.empty:
@@ -104,11 +117,18 @@ def get_fund_info(fund_code: str) -> Dict:
         # 获取最新净值
         latest = df.iloc[0] if not df.empty else None
         
+        # 获取最近 100 条历史数据用于图表
+        history = df.head(100).to_dict('records') if not df.empty else []
+        
         return {
             'code': fund_code,
             'latest_nav': float(latest.get('单位净值', 0)) if latest is not None else 0,
             'nav_date': str(latest.get('净值日期', '')) if latest is not None else '',
             'daily_growth': float(latest.get('日增长率', 0)) if latest is not None else 0,
+            'manager': basic_info.get('基金经理', '---'),
+            'fund_size': basic_info.get('基金规模', '---'),
+            'rating': basic_info.get('晨星评级', '---'), # 注意：akshare 可能不直接返回这个
+            'history': history
         }
         
     except Exception as e:
