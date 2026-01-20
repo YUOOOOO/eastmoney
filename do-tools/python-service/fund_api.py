@@ -102,13 +102,13 @@ def get_fund_info(fund_code: str) -> Dict:
                 })
         
         # 获取最新净值
-        latest = df.iloc[0] if not df.empty else {}
+        latest = df.iloc[0] if not df.empty else None
         
         return {
             'code': fund_code,
-            'latest_nav': float(latest.get('单位净值', 0)) if latest else 0,
-            'nav_date': str(latest.get('净值日期', '')) if latest else '',
-            'daily_growth': float(latest.get('日增长率', 0)) if latest else 0,
+            'latest_nav': float(latest.get('单位净值', 0)) if latest is not None else 0,
+            'nav_date': str(latest.get('净值日期', '')) if latest is not None else '',
+            'daily_growth': float(latest.get('日增长率', 0)) if latest is not None else 0,
         }
         
     except Exception as e:
