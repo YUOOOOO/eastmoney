@@ -120,22 +120,52 @@ def get_fund_info(fund_code: str) -> Dict:
     获取基金详细信息
     """
     try:
-        # 1. 获取基本信息 (增强容错)
         basic_info = {}
+        
+        # 1. 尝试获取基本信息
         try:
+            print(f"DEBUG: Fetching basic info for {fund_code}...")
             df_basic = ak.fund_individual_basic_info_em(symbol=fund_code)
             if not df_basic.empty:
-               # 尝试不同的解析方式，这里假设是两列: item, value
+               # 打印前几行用于调试
+               print(f"DEBUG: Basic info columns: {df_basic.columns.tolist()}") 
                if 'item' in df_basic.columns and 'value' in df_basic.columns:
                    for _, row in df_basic.iterrows():
                        basic_info[row['item']] = row['value']
-               # 如果是单行宽表
                elif len(df_basic) == 1:
                    basic_info = df_basic.iloc[0].to_dict()
+               else:
+                   # 尝试转置或直接取值
+                   print("DEBUG: Basic info structure unknown, converting to dict records")
+                   print(df_basic.head().to_dict('records'))
         except Exception as e:
             print(f"Error fetching basic info: {e}")
 
-        # 2. 获取净值走势
+        # 2. 补充获取基金规模 (如果基本信息里没有)
+        if '基金规模' not in basic_info and 'Asset Size' not in basic_info:
+            try:
+                print("DEBUG: Fetching fund scale history...")
+                df_scale = ak.fund_scale_change_em(symbol=fund_code)
+                if not df_scale.empty:
+                    # 取最新一条
+                    latest_scale = df_scale.iloc[-1]
+                    basic_info['基金规模'] = f"{latest_scale.get('净资产', '---')}亿"
+            except Exception as e:
+                print(f"Error fetching fund scale: {e}")
+
+        # 3. 补充获取基金经理 (如果基本信息里没有)
+        if '基金经理' not in basic_info and 'Manager' not in basic_info:
+            try:
+                print("DEBUG: Fetching fund manager...")
+                df_manager = ak.fund_manager(symbol=fund_code)
+                if not df_manager.empty:
+                    # 取最新一条
+                    latest_manager = df_manager.iloc[-1]
+                    basic_info['基金经理'] = latest_manager.get('姓名', '---')
+            except Exception as e:
+                print(f"Error fetching fund manager: {e}")
+
+        # 4. 获取净值走势
         df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
         
         if df is None or df.empty:
@@ -151,20 +181,21 @@ def get_fund_info(fund_code: str) -> Dict:
                     cols[2]: '日增长率',
                 })
         
-        # 核心修复：按日期倒序排序
+        # 按日期倒序排序
         if '净值日期' in df.columns:
             df['净值日期'] = pd.to_datetime(df['净值日期'], errors='coerce')
             df = df.sort_values('净值日期', ascending=False).reset_index(drop=True)
             df['净值日期'] = df['净值日期'].dt.strftime('%Y-%m-%d')
         
-        # 获取最新净值
         latest = df.iloc[0] if not df.empty else None
-        
-        # 获取最近 100 条历史数据
         history = df.head(100).to_dict('records') if not df.empty else []
 
-        # 3. 获取持仓数据
+        # 5. 获取持仓数据
         holdings = get_fund_holdings(fund_code)
+        
+        # 调试输出
+        print(f"DEBUG: Final Basic Info keys: {basic_info.keys()}")
+        if '基金规模' in basic_info: print(f"DEBUG: Scale: {basic_info['基金规模']}")
         
         return {
             'code': fund_code,
