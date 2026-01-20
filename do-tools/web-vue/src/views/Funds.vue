@@ -21,14 +21,16 @@
       <div v-for="fund in funds" :key="fund.id" class="fund-card">
         <div class="fund-header">
           <div class="fund-icon">基</div>
-          <div class="fund-info">
+          <div class="fund-info" @click="viewDetail(fund.id)">
             <h3>{{ fund.fundName }}</h3>
             <span class="fund-code">{{ fund.fundCode }}</span>
           </div>
-          <button @click="deleteFund(fund.id)" class="delete-btn">⋮</button>
+          <button @click.stop="deleteFund(fund.id)" class="delete-btn">
+            ⋮
+          </button>
         </div>
 
-        <div class="fund-meta">
+        <div class="fund-meta" @click="viewDetail(fund.id)">
           <div class="meta-item">
             <span class="label">类型</span>
             <span class="value">{{ fund.fundType || '未分类' }}</span>
@@ -48,10 +50,10 @@
       </div>
     </div>
 
-    <!-- 添加基金弹窗 -->
+    <!-- 添加/编辑基金弹窗 -->
     <div v-if="showAddDialog" class="modal-mask" @click.self="closeAddDialog">
       <div class="modal-content">
-        <h2>添加新标的</h2>
+        <h2>{{ editingFund ? '编辑基金' : '添加新标的' }}</h2>
 
         <!-- 市场搜索 -->
         <div class="search-section">
@@ -142,11 +144,14 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 
+const router = useRouter()
 const funds = ref([])
 const loading = ref(true)
 const showAddDialog = ref(false)
+const editingFund = ref(null) // 正在编辑的基金
 const searchKeyword = ref('')
 const searching = ref(false)
 const searchResults = ref([])
@@ -227,6 +232,23 @@ const selectFund = async (fund) => {
   searchKeyword.value = ''
 }
 
+const viewDetail = (id) => {
+  router.push(`/home/funds/${id}`)
+}
+
+const editFund = (fund) => {
+  editingFund.value = fund
+  newFund.value = {
+    fundCode: fund.fundCode,
+    fundName: fund.fundName,
+    fundType: fund.fundType,
+    style: fund.style || '',
+    scheduleInterval: fund.scheduleInterval || '24H',
+  }
+  focusBoardsInput.value = fund.focusBoards?.join(', ') || ''
+  showAddDialog.value = true
+}
+
 const canAdd = computed(() => {
   return newFund.value.fundCode && newFund.value.fundName
 })
@@ -241,24 +263,42 @@ const confirmAdd = async () => {
       .map((b) => b.trim())
       .filter((b) => b)
 
-    await axios.post(
-      '/api/funds',
-      {
-        ...newFund.value,
-        focusBoards,
-        scheduleEnabled: true,
-        scheduleTime: '09:15',
-      },
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    )
+    if (editingFund.value) {
+      // 编辑模式
+      await axios.put(
+        `/api/funds/${editingFund.value.id}`,
+        {
+          style: newFund.value.style,
+          focusBoards,
+          scheduleEnabled: true,
+          scheduleTime: '09:15',
+          scheduleInterval: newFund.value.scheduleInterval,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      )
+    } else {
+      // 添加模式
+      await axios.post(
+        '/api/funds',
+        {
+          ...newFund.value,
+          focusBoards,
+          scheduleEnabled: true,
+          scheduleTime: '09:15',
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      )
+    }
 
     await loadFunds()
     closeAddDialog()
   } catch (err) {
-    console.error('Add fund error:', err)
-    alert('添加失败: ' + (err.response?.data?.error || err.message))
+    console.error('Save fund error:', err)
+    alert('保存失败: ' + (err.response?.data?.error || err.message))
   }
 }
 
@@ -279,6 +319,7 @@ const deleteFund = async (id) => {
 
 const closeAddDialog = () => {
   showAddDialog.value = false
+  editingFund.value = null
   newFund.value = {
     fundCode: '',
     fundName: '',
@@ -414,6 +455,11 @@ const closeAddDialog = () => {
 .fund-info {
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+}
+
+.fund-info:hover h3 {
+  color: #667eea;
 }
 
 .fund-info h3 {
@@ -449,6 +495,7 @@ const closeAddDialog = () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  cursor: pointer;
 }
 
 .meta-item {

@@ -7,6 +7,7 @@ from typing import Optional
 import uvicorn
 
 from fund_api import search_funds, get_fund_info
+from search_api import search_fund_news
 
 app = FastAPI(title="do-tools Data Service")
 
@@ -70,6 +71,31 @@ async def get_fund_details(fund_code: str):
         return info
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/search/news")
+async def search_news_endpoint(payload: dict):
+    """
+    搜索新闻接口
+    
+    Payload:
+        query: 搜索关键词
+        api_key: Tavily API Key
+        limit: 限制数量
+    """
+    try:
+        query = payload.get("query")
+        api_key = payload.get("api_key")
+        limit = payload.get("limit", 5)
+        
+        if not query or not api_key:
+            raise HTTPException(status_code=400, detail="Missing query or api_key")
+            
+        # 调用搜索服务
+        results = search_fund_news(query, api_key, max_results=limit)
+        return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

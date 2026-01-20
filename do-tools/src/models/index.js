@@ -29,16 +29,17 @@ User.hasMany(Fund, { foreignKey: 'userId' })
 Fund.belongsTo(User, { foreignKey: 'userId' })
 
 // 同步数据库 (开发环境)
-if (config.env === 'development') {
-  sequelize
-    .sync({ alter: true })
-    .then(() => {
-      console.log('✅ Database synced')
-    })
-    .catch((err) => {
-      console.error('❌ Database sync error:', err)
-    })
-}
+// 注意：SQLite 的 alter 模式有问题，使用手动迁移脚本代替
+// if (config.env === 'development') {
+//   sequelize
+//     .sync({ alter: true })
+//     .then(() => {
+//       console.log('✅ Database synced')
+//     })
+//     .catch((err) => {
+//       console.error('❌ Database sync error:', err)
+//     })
+// }
 
 // 导出
 export { sequelize, User, Settings, ChatHistory, Fund }
