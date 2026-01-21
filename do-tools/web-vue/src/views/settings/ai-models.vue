@@ -608,6 +608,7 @@ const maskApiKey = (key) => {
   font-size: 14px;
   color: #333;
   font-family: 'Courier New', monospace;
+  word-break: break-all;
 }
 
 @keyframes slideDown {

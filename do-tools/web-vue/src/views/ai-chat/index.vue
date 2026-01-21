@@ -199,7 +199,6 @@ const sendMessage = async () => {
   flex: 1;
   overflow-y: auto;
   padding: 24px;
-  padding-bottom: 100px;
 }
 
 .empty-state {
@@ -313,10 +312,7 @@ const sendMessage = async () => {
 
 /* 输入区域 */
 .input-area {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
   padding: 16px 24px 24px;
   background: white;
   border-top: 1px solid #f0f0f0;
